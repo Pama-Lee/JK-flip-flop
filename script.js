@@ -1,9 +1,31 @@
 let flipFlopCount = 1;
 let generatedFormulas = [];
 
+
 document.addEventListener('DOMContentLoaded', (event) => {
     loadInputs();
 });
+
+function showExample() {
+    addFlipFlop();
+    addFlipFlop();
+
+    // Flip Flop 0: Q0'*Q2'+Q1*Q2  Q1
+    // Flip Flop 1: Q0*Q2'          Q0*Q1*Q2
+    // Flip Flop 2: Q0*Q1           Q0*Q1
+    document.getElementById('J0').value = 'Q1\'*Q2\' + Q1*Q2';
+    document.getElementById('K0').value = 'Q1';
+
+    document.getElementById('J1').value = 'Q0*Q2\'';
+    document.getElementById('K1').value = 'Q0*Q1*Q2';
+
+    document.getElementById('J2').value = 'Q0\'*Q1';
+    document.getElementById('K2').value = 'Q0*Q1';
+
+    document.getElementById('example-intro').style.display = 'block';
+
+    saveInputs();
+}
 
 function addFlipFlop() {
     const container = document.getElementById('flipFlopContainer');
@@ -11,8 +33,8 @@ function addFlipFlop() {
     newFlipFlop.classList.add('flip-flop-input');
     newFlipFlop.innerHTML = `
         <label>Flip Flop ${flipFlopCount}:</label>
-        <input class="input" type="text" id="J${flipFlopCount}" placeholder="J${flipFlopCount} expression (e.g., Q0'*Q1)">
-        <input class="input" type="text" id="K${flipFlopCount}" placeholder="K${flipFlopCount} expression (e.g., Q0*Q1)">
+        <input class='input' type="text" id="J${flipFlopCount}" placeholder="J${flipFlopCount} expression (e.g., Q0'*Q1)">
+        <input class='input' type="text" id="K${flipFlopCount}" placeholder="K${flipFlopCount} expression (e.g., Q0*Q1)">
     `;
     container.appendChild(newFlipFlop);
     flipFlopCount++;
@@ -49,6 +71,12 @@ function generateCircuit() {
     for (let cycle = 0; cycle < 10; cycle++) {
         const newQ = [...Q];
 
+        // 如果初始状态为0，保留
+        if (cycle === 0) {
+            timerResult.push([...Q]);
+            continue;
+        }
+
         for (let i = 0; i < flipFlopCount; i++) {
             const Jexp = document.getElementById(`J${i}`).value;
             const Kexp = document.getElementById(`K${i}`).value;
@@ -63,11 +91,150 @@ function generateCircuit() {
         timerResult.push([...Q]);
     }
 
-    document.getElementById('timerResult').innerHTML = 
-        timerResult.map((state, idx) => `Cycle ${idx + 1}: ${state.join(', ')}`).join('<br>');
+    const table = document.createElement('table');
+    table.classList.add('mdui-table');
+    table.innerHTML = `
+        <tr>
+            <th>Cycle</th>
+            <th>Q</th>
+            <th>十进制</th>
+        </tr>
+    `;
+    timerResult.forEach((state, idx) => {
+        // 翻转二进制数组
+        state.reverse();
+        const num = parseInt(state.join(''), 2);
+        table.innerHTML += `
+            <tr>
+                <td>${idx + 1}</td>
+                <td>${state.join('')}</td>
+                <td>${num}</td>
+            </tr>
+        `;
+    });
+
+    document.getElementById('timerResultTable').innerHTML = '';
+    document.getElementById('timerResultTable').appendChild(table);
+
+    mdui.snackbar({
+        message: '电路已生成',
+        position: 'right-top'
+    });
+
+    
+    // 序列，如果是循环序列，最后一个状态是~，否则是->
+    const sequence = [];
+    timerResult.forEach((state, idx) => {
+        const num = parseInt(state.join(''), 2);
+        sequence.push(num);
+    });
+
+    const isCircular = checkIsCircular(sequence);
+
+   //  drawStateDiagram(sequence, isCircular);
+
 
     saveInputs();
 }
+
+function checkIsCircular(sequence) {
+    const last = sequence[sequence.length - 1];
+    return sequence.includes(last, sequence.length - 1);
+}
+
+function drawStateDiagram(sequence, isCircular) {
+    console.log('Drawing state diagram:', sequence, isCircular);
+    const canvas = document.getElementById('stateDiagram');
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const statePositions = {};
+    const radius = 20;
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
+    const numStates = sequence.length;
+
+    // 根据节点数量决定排列方式
+    if (numStates < 4) {
+        // 直线排列
+        const spacing = 100;
+        sequence.forEach((state, idx) => {
+            const x = centerX + (idx - (numStates - 1) / 2) * spacing;
+            const y = centerY;
+            statePositions[state] = { x, y };
+        });
+    } else if (numStates === 4) {
+        // 正方形排列
+        const side = 120;
+        const positions = [
+            { x: centerX - side / 2, y: centerY - side / 2 },
+            { x: centerX + side / 2, y: centerY - side / 2 },
+            { x: centerX + side / 2, y: centerY + side / 2 },
+            { x: centerX - side / 2, y: centerY + side / 2 }
+        ];
+        sequence.forEach((state, idx) => {
+            statePositions[state] = positions[idx];
+        });
+    } else {
+        const angleStep = (2 * Math.PI) / numStates;
+        const radiusOrbit = Math.min(centerX, centerY) - 60;
+        sequence.forEach((state, idx) => {
+            const angle = idx * angleStep;
+            const x = centerX + radiusOrbit * Math.cos(angle);
+            const y = centerY + radiusOrbit * Math.sin(angle);
+            statePositions[state] = { x, y };
+        });
+    }
+
+    sequence.forEach((state, idx) => {
+        const nextState = sequence[(idx + 1) % sequence.length];
+        const { x, y } = statePositions[state];
+        const { x: nextX, y: nextY } = statePositions[nextState];
+
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, 2 * Math.PI);
+        ctx.fillStyle = 'white';
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = 'black';
+        ctx.font = '12px Arial';
+        ctx.fillText(state, x - 5, y + 5);
+
+        if (isCircular || idx < sequence.length - 1) {
+            drawArrow(ctx, x, y, nextX, nextY, radius);
+        }
+    });
+
+    ctx.fillStyle = 'black';
+    ctx.font = '14px Arial';
+    ctx.fillText(isCircular ? 'Circular Sequence' : 'Non-circular Sequence', 10, canvas.height - 10);
+}
+
+function drawArrow(ctx, fromX, fromY, toX, toY, radius) {
+    const headLength = 10; // 箭头长度
+    const angle = Math.atan2(toY - fromY, toX - fromX);
+
+    // 从圆圈边缘开始画线
+    const startX = fromX + radius * Math.cos(angle);
+    const startY = fromY + radius * Math.sin(angle);
+    const endX = toX - radius * Math.cos(angle);
+    const endY = toY - radius * Math.sin(angle);
+
+    ctx.beginPath();
+    ctx.moveTo(startX, startY);
+    ctx.lineTo(endX, endY);
+    ctx.stroke();
+
+    // 画箭头
+    ctx.beginPath();
+    ctx.moveTo(endX, endY);
+    ctx.lineTo(endX - headLength * Math.cos(angle - Math.PI / 6), endY - headLength * Math.sin(angle - Math.PI / 6));
+    ctx.lineTo(endX - headLength * Math.cos(angle + Math.PI / 6), endY - headLength * Math.sin(angle + Math.PI / 6));
+    ctx.closePath();
+    ctx.fill();
+}
+
 
 function saveInputs() {
     const inputs = {};
@@ -143,10 +310,10 @@ function generateJKFormulas() {
     });
 }
 
+
 function fillGeneratedFormulas() {
     const numFlipFlops = generatedFormulas.length;
 
-    // Ensure there are enough input fields
     while (flipFlopCount < numFlipFlops) {
         addFlipFlop();
     }
